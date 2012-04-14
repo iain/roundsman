@@ -8,12 +8,19 @@ require 'delegate'
 
     unless respond_to?(:set_default)
       def set_default(name, *args, &block)
-        set(name, *args, &block) unless exists?(name)
+        @_defaults ||= []
+        @_overridden_defaults ||= []
+        @_defaults << name
+        if exists?(name)
+          @_overridden_defaults << name
+        else
+          set(name, *args, &block)
+        end
       end
     end
 
     set_default :ruby_version, "1.9.3-p125"
-    set_default :cookbooks_directory, "config/cookbooks"
+    set_default :cookbooks_directory, ["config/cookbooks"]
     set_default :stream_chef_output, true
     set_default :care_about_ruby_version, true
     set_default :chef_directory, "/tmp/chef"
@@ -35,6 +42,17 @@ require 'delegate'
       ./install.sh
       ruby-build #{fetch(:ruby_version)} #{fetch(:ruby_install_dir)}
     BASH
+
+    desc "Lists configuration"
+    task :configuration, :except => { :no_release => true } do
+      @_defaults.sort.each do |name|
+        display_name = ":#{name},".ljust(30)
+        value = fetch(name).inspect
+        value = "#{value[0..40]}... (truncated)" if value.length > 40
+        overridden = @_overridden_defaults.include?(name) ? "(overridden)" : ""
+        puts "set #{display_name} #{value} #{overridden}"
+      end
+    end
 
     desc "Installs ruby."
     task :install_ruby, :except => { :no_release => true } do

@@ -149,21 +149,13 @@ set :passenger, :version => "3.0.12", :max_pool_size => 4
 ```
 
 There are also a set of configuration options for Roundsman itself. They all
-have sensible defaults, but you can override them if needed. Here are the
-defaults:
+have sensible defaults, but you can override them if needed. To read all the
+default configuration:
 
-``` ruby
-# config/deploy.rb
-
-# Which Ruby version to install:
-set :ruby_version, "1.9.3-p125"
-
-# Where to find the cookbooks (in your repository):
-set :cookbooks_directory, "config/cookbooks"
-
-# Will output the raw Chef output to your terminal for better readability.
-set :stream_chef_output, true 
+``` bash
+$ cap roundsman:configuration
 ```
+
 
 You can also perform a lot of tasks by hand if you need to. Here's how to get
 information:
