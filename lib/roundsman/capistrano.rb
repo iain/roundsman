@@ -25,6 +25,7 @@ require 'delegate'
     set_default :care_about_ruby_version, true
     set_default :chef_directory, "/tmp/chef"
     set_default :chef_version, "~> 0.10.8"
+    set_default :copyfile_disable, false
 
     set_default :ruby_dependencies, %w(git-core curl build-essential bison openssl
         libreadline6 libreadline6-dev zlib1g zlib1g-dev libssl-dev
@@ -44,11 +45,15 @@ require 'delegate'
     BASH
 
     desc "Lists configuration"
-    task :configuration, :except => { :no_release => true } do
+    task :configuration do
       @_defaults.sort.each do |name|
         display_name = ":#{name},".ljust(30)
-        value = fetch(name).inspect
-        value = "#{value[0..40]}... (truncated)" if value.length > 40
+        if variables[name].is_a?(Proc)
+          value = "<block>"
+        else
+          value = fetch(name).inspect
+          value = "#{value[0..40]}... (truncated)" if value.length > 40
+        end
         overridden = @_overridden_defaults.include?(name) ? "(overridden)" : ""
         puts "set #{display_name} #{value} #{overridden}"
       end
@@ -86,6 +91,10 @@ require 'delegate'
         install_ruby
       end
       install_chef if install_chef?
+      generate_config
+      generate_attributes(run_list)
+      copy_cookbooks
+      _root "chef-solo -c #{chef_directory("solo.rb")} -j #{chef_directory("solo.json")}"
     end
 
     def ensure_cookbooks_exist(run_list)
@@ -158,6 +167,52 @@ require 'delegate'
         stream *args
       else
         run *args
+      end
+    end
+
+    def generate_config
+      cookbook_string = cookbooks_paths.map { |c| "File.join(root, #{c.to_s.inspect})" }.join(', ')
+      solo_rb = <<-RUBY
+        root = File.expand_path(File.dirname(__FILE__))
+        file_cache_path File.join(root, "cache")
+        cookbook_path [ #{cookbook_string} ]
+      RUBY
+      put solo_rb, chef_directory("solo.rb"), :via => :scp
+    end
+
+    def generate_attributes(run_list)
+      attrs = remove_procs_from_hash variables.dup
+      attrs[:run_list] = run_list
+      put attrs.to_json, chef_directory("solo.json"), :via => :scp
+    end
+
+    # Recursively removes procs from hashes. Procs can exist because you specified them like this:
+    #
+    #     set(:root_password) { Capistrano::CLI.password_prompt("Root password: ") }
+    def remove_procs_from_hash(hash)
+      new_hash = {}
+      hash.each do |key, value|
+        new_value = value.respond_to?(:call) ? value.call : value
+        if new_value.is_a?(Hash)
+          new_value = remove_procs_from_hash(new_value)
+        end
+        unless new_value.class.to_s.include?("Capistrano") # skip capistrano tasks
+          new_hash[key] = new_value
+        end
+      end
+      new_hash
+    end
+
+    def copy_cookbooks
+      tar_file = Tempfile.new("cookbooks.tar")
+      begin
+        tar_file.close
+        env_vars = fetch(:copyfile_disable) && RUBY_PLATFORM.downcase.include?('darwin') ? "COPYFILE_DISABLE=true" : ""
+        system "#{env_vars} tar -cjf #{tar_file.path} #{cookbooks_paths.join(' ')}"
+        upload tar_file.path, chef_directory("cookbooks.tar"), :via => :scp
+        _run "cd #{chef_directory} && tar -xjf cookbooks.tar"
+      ensure
+        tar_file.unlink
       end
     end
 
