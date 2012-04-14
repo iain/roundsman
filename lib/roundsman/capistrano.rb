@@ -6,16 +6,14 @@ require 'delegate'
 
   namespace :roundsman do
 
-    unless respond_to?(:set_default)
-      def set_default(name, *args, &block)
-        @_defaults ||= []
-        @_overridden_defaults ||= []
-        @_defaults << name
-        if exists?(name)
-          @_overridden_defaults << name
-        else
-          set(name, *args, &block)
-        end
+    def set_default(name, *args, &block)
+      @_defaults ||= []
+      @_overridden_defaults ||= []
+      @_defaults << name
+      if exists?(name)
+        @_overridden_defaults << name
+      else
+        set(name, *args, &block)
       end
     end
 
