@@ -1,6 +1,5 @@
 require 'json'
 require 'tempfile'
-require 'delegate'
 
 ::Capistrano::Configuration.instance(:must_exist).load do
 
@@ -21,7 +20,7 @@ require 'delegate'
     set_default :cookbooks_directory, ["config/cookbooks"]
     set_default :stream_chef_output, true
     set_default :care_about_ruby_version, true
-    set_default :chef_directory, "/tmp/chef"
+    set_default :roundsman_working_dir, "/tmp/roundsman"
     set_default :chef_version, "~> 0.10.8"
     set_default :copyfile_disable, false
 
@@ -34,7 +33,7 @@ require 'delegate'
 
     set_default :ruby_install_script, <<-BASH
       set -e
-      cd #{chef_directory}
+      cd #{roundsman_working_dir}
       rm -rf ruby-build
       git clone -q git://github.com/sstephenson/ruby-build.git
       cd ruby-build
@@ -59,8 +58,8 @@ require 'delegate'
 
     desc "Installs ruby."
     task :install_ruby, :except => { :no_release => true } do
-      put fetch(:ruby_install_script), chef_directory("install_ruby.sh"), :via => :scp
-      _root "bash #{chef_directory("install_ruby.sh")}"
+      put fetch(:ruby_install_script), roundsman_working_dir("install_ruby.sh"), :via => :scp
+      _root "bash #{roundsman_working_dir("install_ruby.sh")}"
     end
 
     desc "Installs the dependencies needed for Ruby"
@@ -82,22 +81,33 @@ require 'delegate'
       abort if install_ruby?
     end
 
+    desc "Generates the config and copies over the cookbooks to the server"
+    task :prepare_chef, :except => { :no_release => true } do
+      install_chef if install_chef?
+      ensure_cookbooks_exists
+      generate_config
+      generate_attributes
+      copy_cookbooks
+    end
+
+    desc "Runs the existing chef configuration"
+    task :run_chef, :except => { :no_release => true } do
+      _root "chef-solo -c #{roundsman_working_dir("solo.rb")} -j #{roundsman_working_dir("solo.json")}"
+    end
+
     def chef(*run_list)
-      ensure_cookbooks_exist(run_list)
+      set :run_list, run_list
       if install_ruby?
         install_dependencies
         install_ruby
       end
-      install_chef if install_chef?
-      generate_config
-      generate_attributes(run_list)
-      copy_cookbooks
-      _root "chef-solo -c #{chef_directory("solo.rb")} -j #{chef_directory("solo.json")}"
+      prepare_chef
+      run_chef
     end
 
-    def ensure_cookbooks_exist(run_list)
+    def ensure_cookbooks_exists
       abort "You must specify at least one recipe when running roundsman.chef" if run_list.empty?
-      abort "No cookbooks found in #{fetch(:cookbooks_directory)}" if cookbooks_paths.empty?
+      abort "No cookbooks found in #{fetch(:cookbooks_directory).inspect}" if cookbooks_paths.empty?
     end
 
     def ensure_supported_distro
@@ -108,11 +118,11 @@ require 'delegate'
       end
     end
 
-    def ensure_chef_directory
-      unless @ensured_chef_directory
-        _run "mkdir -p #{fetch(:chef_directory)}"
-        _root "chown -R #{user} #{fetch(:chef_directory)}"
-        @ensured_chef_directory = true
+    def ensure_roundsman_working_dir
+      unless @ensured_roundsman_working_dir
+        _run "mkdir -p #{fetch(:roundsman_working_dir)}"
+        _root "chown -R #{user} #{fetch(:roundsman_working_dir)}"
+        @ensured_roundsman_working_dir = true
       end
     end
 
@@ -151,9 +161,9 @@ require 'delegate'
       @distribution ||= capture("cat /etc/issue").strip
     end
 
-    def chef_directory(*path)
-      ensure_chef_directory
-      File.join(fetch(:chef_directory), *path)
+    def roundsman_working_dir(*path)
+      ensure_roundsman_working_dir
+      File.join(fetch(:roundsman_working_dir), *path)
     end
 
     def _root(command, *args)
@@ -175,13 +185,13 @@ require 'delegate'
         file_cache_path File.join(root, "cache")
         cookbook_path [ #{cookbook_string} ]
       RUBY
-      put solo_rb, chef_directory("solo.rb"), :via => :scp
+      put solo_rb, roundsman_working_dir("solo.rb"), :via => :scp
     end
 
-    def generate_attributes(run_list)
+    def generate_attributes
       attrs = remove_procs_from_hash variables.dup
       attrs[:run_list] = run_list
-      put attrs.to_json, chef_directory("solo.json"), :via => :scp
+      put attrs.to_json, roundsman_working_dir("solo.json"), :via => :scp
     end
 
     # Recursively removes procs from hashes. Procs can exist because you specified them like this:
@@ -207,8 +217,8 @@ require 'delegate'
         tar_file.close
         env_vars = fetch(:copyfile_disable) && RUBY_PLATFORM.downcase.include?('darwin') ? "COPYFILE_DISABLE=true" : ""
         system "#{env_vars} tar -cjf #{tar_file.path} #{cookbooks_paths.join(' ')}"
-        upload tar_file.path, chef_directory("cookbooks.tar"), :via => :scp
-        _run "cd #{chef_directory} && tar -xjf cookbooks.tar"
+        upload tar_file.path, roundsman_working_dir("cookbooks.tar"), :via => :scp
+        _run "cd #{roundsman_working_dir} && tar -xjf cookbooks.tar"
       ensure
         tar_file.unlink
       end
