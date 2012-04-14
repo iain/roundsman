@@ -16,5 +16,5 @@ default_run_options[:pty] = true
 
 before "deploy:cold" do
   deploy.setup
-  roundsman.chef "recipe[main::cold]"
+  roundsman.run "recipe[main::cold]"
 end

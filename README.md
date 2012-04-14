@@ -91,7 +91,7 @@ say you want to run the default recipe of your own cookbook, called `main`.
 # config/deploy.rb
 
 before "deploy:update_code" do
-  roundsman.chef "recipe[main]"
+  roundsman.run "recipe[main]"
 end
 ```
 
@@ -107,7 +107,7 @@ your webserver and have it run after deploying your new code:
 # config/deploy.rb
 
 after "deploy:symlink" do
-  roundsman.chef "recipe[main::webserver]"
+  roundsman.run "recipe[main::webserver]"
 end
 ```
 
@@ -118,7 +118,7 @@ If you want a recipe to only run on a specific role, you can do so like this:
 
 namespace :install do
   task :postgres, :roles => [:db] do
-    roundsman.chef "recipe[main::postgres]"
+    roundsman.run "recipe[main::postgres]"
   end
 end
 

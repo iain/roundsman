@@ -5,6 +5,12 @@ require 'tempfile'
 
   namespace :roundsman do
 
+    def run(*run_list)
+      set :run_list, run_list
+      install_ruby
+      run_chef
+    end
+
     def set_default(name, *args, &block)
       @_defaults ||= []
       @_overridden_defaults ||= []
@@ -16,30 +22,25 @@ require 'tempfile'
       end
     end
 
-    set_default :ruby_version, "1.9.3-p125"
-    set_default :cookbooks_directory, ["config/cookbooks"]
-    set_default :stream_chef_output, true
-    set_default :care_about_ruby_version, true
+    def roundsman_working_dir(*path)
+      ensure_roundsman_working_dir
+      File.join(fetch(:roundsman_working_dir), *path)
+    end
+
+    def _root(command, *args)
+      _run("#{sudo} #{command}", *args)
+    end
+
+    def _run(*args)
+      if fetch(:stream_roundsman_output)
+        stream *args
+      else
+        top.run *args
+      end
+    end
+
     set_default :roundsman_working_dir, "/tmp/roundsman"
-    set_default :chef_version, "~> 0.10.8"
-    set_default :copyfile_disable, false
-
-    set_default :ruby_dependencies, %w(git-core curl build-essential bison openssl
-        libreadline6 libreadline6-dev zlib1g zlib1g-dev libssl-dev
-        libyaml-dev libxml2-dev libxslt-dev autoconf libc6-dev ncurses-dev
-        vim wget tree)
-
-    set_default :ruby_install_dir, "/usr/local"
-
-    set_default :ruby_install_script, <<-BASH
-      set -e
-      cd #{roundsman_working_dir}
-      rm -rf ruby-build
-      git clone -q git://github.com/sstephenson/ruby-build.git
-      cd ruby-build
-      ./install.sh
-      ruby-build #{fetch(:ruby_version)} #{fetch(:ruby_install_dir)}
-    BASH
+    set_default :stream_roundsman_output, true
 
     desc "Lists configuration"
     task :configuration do
@@ -56,69 +57,17 @@ require 'tempfile'
       end
     end
 
-    desc "Installs ruby."
-    task :install_ruby, :except => { :no_release => true } do
-      put fetch(:ruby_install_script), roundsman_working_dir("install_ruby.sh"), :via => :scp
-      _root "bash #{roundsman_working_dir("install_ruby.sh")}"
+    desc "Prepares the server for chef"
+    task :install_ruby do
+      install.default
     end
 
-    desc "Installs the dependencies needed for Ruby"
-    task :install_dependencies, :except => { :no_release => true } do
-      ensure_supported_distro
-      _root "aptitude -yq update"
-      _root "aptitude -yq install #{fetch(:ruby_dependencies).join(' ')}"
+    desc "Runs chef"
+    task :run_chef do
+      chef.default
     end
 
-    desc "Installs chef"
-    task :install_chef, :except => { :no_release => true } do
-      _root "gem uninstall -xaI chef || true"
-      _root "gem install chef -v #{fetch(:chef_version).inspect} --quiet --no-ri --no-rdoc"
-      _root "gem install ruby-shadow --quiet --no-ri --no-rdoc"
-    end
-
-    desc "Checks if the ruby version installed matches the version specified"
-    task :check_ruby_version do
-      abort if install_ruby?
-    end
-
-    desc "Generates the config and copies over the cookbooks to the server"
-    task :prepare_chef, :except => { :no_release => true } do
-      install_chef if install_chef?
-      ensure_cookbooks_exists
-      generate_config
-      generate_attributes
-      copy_cookbooks
-    end
-
-    desc "Runs the existing chef configuration"
-    task :run_chef, :except => { :no_release => true } do
-      _root "chef-solo -c #{roundsman_working_dir("solo.rb")} -j #{roundsman_working_dir("solo.json")}"
-    end
-
-    def chef(*run_list)
-      set :run_list, run_list
-      if install_ruby?
-        install_dependencies
-        install_ruby
-      end
-      prepare_chef
-      run_chef
-    end
-
-    def ensure_cookbooks_exists
-      abort "You must specify at least one recipe when running roundsman.chef" if run_list.empty?
-      abort "No cookbooks found in #{fetch(:cookbooks_directory).inspect}" if cookbooks_paths.empty?
-    end
-
-    def ensure_supported_distro
-      unless @ensured_supported_distro
-        logger.info "Using Linux distribution #{distribution}"
-        abort "This distribution is not (yet) supported." unless distribution.include?("Ubuntu")
-        @ensured_supported_distro = true
-      end
-    end
-
-    def ensure_roundsman_working_dir
+    task :ensure_roundsman_working_dir, :except => { :no_release => true } do
       unless @ensured_roundsman_working_dir
         _run "mkdir -p #{fetch(:roundsman_working_dir)}"
         _root "chown -R #{user} #{fetch(:roundsman_working_dir)}"
@@ -126,104 +75,187 @@ require 'tempfile'
       end
     end
 
-    def cookbooks_paths
-      Array(fetch(:cookbooks_directory)).select { |path| File.exist?(path) }
-    end
 
-    def install_ruby?
-      installed_version = capture("ruby --version || true").strip
-      if installed_version.include?("not found")
-        logger.info "No version of Ruby could be found."
-        return true
+    namespace :install do
+
+      set_default :ruby_version, "1.9.3-p125"
+      set_default :care_about_ruby_version, true
+      set_default :ruby_install_dir, "/usr/local"
+
+      set_default :ruby_dependencies do
+        %w(git-core curl build-essential bison openssl
+          libreadline6 libreadline6-dev zlib1g zlib1g-dev libssl-dev
+          libyaml-dev libxml2-dev libxslt-dev autoconf libc6-dev ncurses-dev
+          vim wget tree)
       end
-      required_version = fetch(:ruby_version).gsub("-", "")
-      if installed_version.include?(required_version)
-        if fetch(:care_about_ruby_version)
-          logger.info "Ruby #{installed_version} matches the required version: #{required_version}."
-          return false
-        else
-          logger.info "Already installed Ruby #{installed_version}, not #{required_version}. Set :care_about_ruby_version if you want to fix this."
-          return false
+
+      set_default :ruby_install_script do
+        %Q{
+          set -e
+          cd #{roundsman_working_dir}
+          rm -rf ruby-build
+          git clone -q git://github.com/sstephenson/ruby-build.git
+          cd ruby-build
+          ./install.sh
+          ruby-build #{fetch(:ruby_version)} #{fetch(:ruby_install_dir)}
+        }
+      end
+
+      task :default, :except => { :no_release => true } do
+        if install_ruby?
+          dependencies
+          ruby
         end
-      else
-        logger.info "Ruby version mismatch. Installed version: #{installed_version}, required is #{required_version}"
-        return true
       end
-    end
 
-    def install_chef?
-      required_version = fetch(:chef_version).inspect
-      output = capture("gem list -i -v #{required_version} || true").strip
-      output == "false"
-    end
-
-    def distribution
-      @distribution ||= capture("cat /etc/issue").strip
-    end
-
-    def roundsman_working_dir(*path)
-      ensure_roundsman_working_dir
-      File.join(fetch(:roundsman_working_dir), *path)
-    end
-
-    def _root(command, *args)
-      _run("#{sudo} #{command}", *args)
-    end
-
-    def _run(*args)
-      if fetch(:stream_chef_output)
-        stream *args
-      else
-        run *args
+      desc "Installs ruby."
+      task :ruby, :except => { :no_release => true } do
+        put fetch(:ruby_install_script), roundsman_working_dir("install_ruby.sh"), :via => :scp
+        _root "bash #{roundsman_working_dir("install_ruby.sh")}"
       end
+
+      desc "Installs the dependencies needed for Ruby"
+      task :dependencies, :except => { :no_release => true } do
+        ensure_supported_distro
+        _root "aptitude -yq update"
+        _root "aptitude -yq install #{fetch(:ruby_dependencies).join(' ')}"
+      end
+
+      desc "Checks if the ruby version installed matches the version specified"
+      task :check_ruby_version do
+        abort if install_ruby?
+      end
+
+      def distribution
+        @distribution ||= capture("cat /etc/issue").strip
+      end
+
+      def ensure_supported_distro
+        unless @ensured_supported_distro
+          logger.info "Using Linux distribution #{distribution}"
+          abort "This distribution is not (yet) supported." unless distribution.include?("Ubuntu")
+          @ensured_supported_distro = true
+        end
+      end
+
+      def install_ruby?
+        installed_version = capture("ruby --version || true").strip
+        if installed_version.include?("not found")
+          logger.info "No version of Ruby could be found."
+          return true
+        end
+        required_version = fetch(:ruby_version).gsub("-", "")
+        if installed_version.include?(required_version)
+          if fetch(:care_about_ruby_version)
+            logger.info "Ruby #{installed_version} matches the required version: #{required_version}."
+            return false
+          else
+            logger.info "Already installed Ruby #{installed_version}, not #{required_version}. Set :care_about_ruby_version if you want to fix this."
+            return false
+          end
+        else
+          logger.info "Ruby version mismatch. Installed version: #{installed_version}, required is #{required_version}"
+          return true
+        end
+      end
+
     end
 
-    def generate_config
-      cookbook_string = cookbooks_paths.map { |c| "File.join(root, #{c.to_s.inspect})" }.join(', ')
-      solo_rb = <<-RUBY
+    namespace :chef do
+
+      set_default :chef_version, "~> 0.10.8"
+      set_default :cookbooks_directory, ["config/cookbooks"]
+      set_default :copyfile_disable, false
+
+      task :default, :except => { :no_release => true } do
+        ensure_cookbooks_exists
+        prepare_chef
+        chef_solo
+      end
+
+      desc "Generates the config and copies over the cookbooks to the server"
+      task :prepare_chef, :except => { :no_release => true } do
+        install if install_chef?
+        ensure_cookbooks_exists
+        generate_config
+        generate_attributes
+        copy_cookbooks
+      end
+
+      desc "Installs chef"
+      task :install, :except => { :no_release => true } do
+        _root "gem uninstall -xaI chef || true"
+        _root "gem install chef -v #{fetch(:chef_version).inspect} --quiet --no-ri --no-rdoc"
+        _root "gem install ruby-shadow --quiet --no-ri --no-rdoc"
+      end
+
+      desc "Runs the existing chef configuration"
+      task :chef_solo, :except => { :no_release => true } do
+        _root "chef-solo -c #{roundsman_working_dir("solo.rb")} -j #{roundsman_working_dir("solo.json")}"
+      end
+
+      def ensure_cookbooks_exists
+        abort "You must specify at least one recipe when running roundsman.chef" if fetch(:run_list, []).empty?
+        abort "No cookbooks found in #{fetch(:cookbooks_directory).inspect}" if cookbooks_paths.empty?
+      end
+
+      def cookbooks_paths
+        Array(fetch(:cookbooks_directory)).select { |path| File.exist?(path) }
+      end
+
+      def install_chef?
+        required_version = fetch(:chef_version).inspect
+        output = capture("gem list -i -v #{required_version} || true").strip
+        output == "false"
+      end
+
+      def generate_config
+        cookbook_string = cookbooks_paths.map { |c| "File.join(root, #{c.to_s.inspect})" }.join(', ')
+        solo_rb = <<-RUBY
         root = File.expand_path(File.dirname(__FILE__))
         file_cache_path File.join(root, "cache")
         cookbook_path [ #{cookbook_string} ]
-      RUBY
-      put solo_rb, roundsman_working_dir("solo.rb"), :via => :scp
-    end
+          RUBY
+          put solo_rb, roundsman_working_dir("solo.rb"), :via => :scp
+      end
 
-    def generate_attributes
-      attrs = remove_procs_from_hash variables.dup
-      attrs[:run_list] = run_list
-      put attrs.to_json, roundsman_working_dir("solo.json"), :via => :scp
-    end
+      def generate_attributes
+        attrs = remove_procs_from_hash variables.dup
+        attrs[:run_list] = run_list
+        put attrs.to_json, roundsman_working_dir("solo.json"), :via => :scp
+      end
 
-    # Recursively removes procs from hashes. Procs can exist because you specified them like this:
-    #
-    #     set(:root_password) { Capistrano::CLI.password_prompt("Root password: ") }
-    def remove_procs_from_hash(hash)
-      new_hash = {}
-      hash.each do |key, value|
-        new_value = value.respond_to?(:call) ? value.call : value
-        if new_value.is_a?(Hash)
-          new_value = remove_procs_from_hash(new_value)
+      # Recursively removes procs from hashes. Procs can exist because you specified them like this:
+      #
+      #     set(:root_password) { Capistrano::CLI.password_prompt("Root password: ") }
+      def remove_procs_from_hash(hash)
+        new_hash = {}
+        hash.each do |key, value|
+          new_value = value.respond_to?(:call) ? value.call : value
+          if new_value.is_a?(Hash)
+            new_value = remove_procs_from_hash(new_value)
+          end
+          unless new_value.class.to_s.include?("Capistrano") # skip capistrano tasks
+            new_hash[key] = new_value
+          end
         end
-        unless new_value.class.to_s.include?("Capistrano") # skip capistrano tasks
-          new_hash[key] = new_value
+        new_hash
+      end
+
+      def copy_cookbooks
+        tar_file = Tempfile.new("cookbooks.tar")
+        begin
+          tar_file.close
+          env_vars = fetch(:copyfile_disable) && RUBY_PLATFORM.downcase.include?('darwin') ? "COPYFILE_DISABLE=true" : ""
+          system "#{env_vars} tar -cjf #{tar_file.path} #{cookbooks_paths.join(' ')}"
+          upload tar_file.path, roundsman_working_dir("cookbooks.tar"), :via => :scp
+          _run "cd #{roundsman_working_dir} && tar -xjf cookbooks.tar"
+        ensure
+          tar_file.unlink
         end
       end
-      new_hash
-    end
 
-    def copy_cookbooks
-      tar_file = Tempfile.new("cookbooks.tar")
-      begin
-        tar_file.close
-        env_vars = fetch(:copyfile_disable) && RUBY_PLATFORM.downcase.include?('darwin') ? "COPYFILE_DISABLE=true" : ""
-        system "#{env_vars} tar -cjf #{tar_file.path} #{cookbooks_paths.join(' ')}"
-        upload tar_file.path, roundsman_working_dir("cookbooks.tar"), :via => :scp
-        _run "cd #{roundsman_working_dir} && tar -xjf cookbooks.tar"
-      ensure
-        tar_file.unlink
-      end
     end
 
   end
-
 end
