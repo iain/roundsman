@@ -5,10 +5,14 @@ require 'tempfile'
 
   namespace :roundsman do
 
-    def run(*run_list)
-      set :run_list, run_list
-      install_ruby
-      run_chef
+    def run_list(*recipes)
+      if recipes.any?
+        set :run_list, recipes
+        install_ruby
+        run_chef
+      else
+        Array(fetch(:run_list))
+      end
     end
 
     def set_default(name, *args, &block)
@@ -27,13 +31,13 @@ require 'tempfile'
       File.join(fetch(:roundsman_working_dir), *path)
     end
 
-    def _root(command, *args)
-      _run("#{sudo} #{command}", *args)
+    def sudo(command, *args)
+      run "#{top.sudo} #{command}", *args
     end
 
-    def _run(*args)
+    def run(*args)
       if fetch(:stream_roundsman_output)
-        stream *args
+        top.stream *args
       else
         top.run *args
       end
@@ -69,8 +73,8 @@ require 'tempfile'
 
     task :ensure_roundsman_working_dir, :except => { :no_release => true } do
       unless @ensured_roundsman_working_dir
-        _run "mkdir -p #{fetch(:roundsman_working_dir)}"
-        _root "chown -R #{user} #{fetch(:roundsman_working_dir)}"
+        run "mkdir -p #{fetch(:roundsman_working_dir)}"
+        sudo "chown -R #{user} #{fetch(:roundsman_working_dir)}"
         @ensured_roundsman_working_dir = true
       end
     end
@@ -111,14 +115,14 @@ require 'tempfile'
       desc "Installs ruby."
       task :ruby, :except => { :no_release => true } do
         put fetch(:ruby_install_script), roundsman_working_dir("install_ruby.sh"), :via => :scp
-        _root "bash #{roundsman_working_dir("install_ruby.sh")}"
+        sudo "bash #{roundsman_working_dir("install_ruby.sh")}"
       end
 
       desc "Installs the dependencies needed for Ruby"
       task :dependencies, :except => { :no_release => true } do
         ensure_supported_distro
-        _root "aptitude -yq update"
-        _root "aptitude -yq install #{fetch(:ruby_dependencies).join(' ')}"
+        sudo "aptitude -yq update"
+        sudo "aptitude -yq install #{fetch(:ruby_dependencies).join(' ')}"
       end
 
       desc "Checks if the ruby version installed matches the version specified"
@@ -184,14 +188,15 @@ require 'tempfile'
 
       desc "Installs chef"
       task :install, :except => { :no_release => true } do
-        _root "gem uninstall -xaI chef || true"
-        _root "gem install chef -v #{fetch(:chef_version).inspect} --quiet --no-ri --no-rdoc"
-        _root "gem install ruby-shadow --quiet --no-ri --no-rdoc"
+        sudo "gem uninstall -xaI chef || true"
+        sudo "gem install chef -v #{fetch(:chef_version).inspect} --quiet --no-ri --no-rdoc"
+        sudo "gem install ruby-shadow --quiet --no-ri --no-rdoc"
       end
 
       desc "Runs the existing chef configuration"
       task :chef_solo, :except => { :no_release => true } do
-        _root "chef-solo -c #{roundsman_working_dir("solo.rb")} -j #{roundsman_working_dir("solo.json")}"
+        logger.info "Now running #{fetch(:run_list).join(', ')}"
+        sudo "chef-solo -c #{roundsman_working_dir("solo.rb")} -j #{roundsman_working_dir("solo.json")}"
       end
 
       def ensure_cookbooks_exists
@@ -221,7 +226,6 @@ require 'tempfile'
 
       def generate_attributes
         attrs = remove_procs_from_hash variables.dup
-        attrs[:run_list] = run_list
         put attrs.to_json, roundsman_working_dir("solo.json"), :via => :scp
       end
 
@@ -231,12 +235,22 @@ require 'tempfile'
       def remove_procs_from_hash(hash)
         new_hash = {}
         hash.each do |key, value|
-          new_value = value.respond_to?(:call) ? value.call : value
-          if new_value.is_a?(Hash)
-            new_value = remove_procs_from_hash(new_value)
+          real_value = if value.respond_to?(:call)
+                         begin
+                           value.call
+                         rescue ::Capistrano::CommandError => e
+                           logger.debug "Could not get the value of #{key}: #{e.message}"
+                           nil
+                         end
+                       else
+                         value
+                       end
+
+          if real_value.is_a?(Hash)
+            real_value = remove_procs_from_hash(real_value)
           end
-          unless new_value.class.to_s.include?("Capistrano") # skip capistrano tasks
-            new_hash[key] = new_value
+          unless real_value.class.to_s.include?("Capistrano") # skip capistrano tasks
+            new_hash[key] = real_value
           end
         end
         new_hash
@@ -249,7 +263,7 @@ require 'tempfile'
           env_vars = fetch(:copyfile_disable) && RUBY_PLATFORM.downcase.include?('darwin') ? "COPYFILE_DISABLE=true" : ""
           system "#{env_vars} tar -cjf #{tar_file.path} #{cookbooks_paths.join(' ')}"
           upload tar_file.path, roundsman_working_dir("cookbooks.tar"), :via => :scp
-          _run "cd #{roundsman_working_dir} && tar -xjf cookbooks.tar"
+          run "cd #{roundsman_working_dir} && tar -xjf cookbooks.tar"
         ensure
           tar_file.unlink
         end

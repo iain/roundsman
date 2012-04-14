@@ -91,7 +91,7 @@ say you want to run the default recipe of your own cookbook, called `main`.
 # config/deploy.rb
 
 before "deploy:update_code" do
-  roundsman.run "recipe[main]"
+  roundsman.run_list "recipe[main]"
 end
 ```
 
@@ -106,8 +106,8 @@ your webserver and have it run after deploying your new code:
 ``` ruby
 # config/deploy.rb
 
-after "deploy:symlink" do
-  roundsman.run "recipe[main::webserver]"
+after "deploy:create_symlink" do
+  roundsman.run_list "recipe[main::webserver]"
 end
 ```
 
@@ -118,7 +118,7 @@ If you want a recipe to only run on a specific role, you can do so like this:
 
 namespace :install do
   task :postgres, :roles => [:db] do
-    roundsman.run "recipe[main::postgres]"
+    roundsman.run_list "recipe[main::postgres]"
   end
 end
 
@@ -222,7 +222,7 @@ If you want to test out your configuration locally, you should take a look at
 can even create a stage just for Vagrant with the Capistrano multistage
 extension.
 
-### Contributing
+## Contributing
 
 If you want to help out, please! Create an issue or do a pull request and I
 will take a look at it.
