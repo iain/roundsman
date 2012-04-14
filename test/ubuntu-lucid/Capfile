@@ -1,0 +1,8 @@
+#!/usr/bin/env ruby
+
+# These lines are part of the default Capfile
+load 'deploy'
+load 'config/deploy'
+
+# These lines are to get Roundsman loaded for the test
+require 'roundsman/capistrano'

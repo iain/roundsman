@@ -91,7 +91,7 @@ say you want to run the default recipe of your own cookbook, called `main`.
 # config/deploy.rb
 
 before "deploy:update_code" do
-  roundsman.run "recipe[main]"
+  roundsman.chef "recipe[main]"
 end
 ```
 
@@ -107,7 +107,7 @@ your webserver and have it run after deploying your new code:
 # config/deploy.rb
 
 after "deploy:symlink" do
-  roundsman.run "recipe[main::webserver]"
+  roundsman.chef "recipe[main::webserver]"
 end
 ```
 
@@ -165,14 +165,41 @@ set :cookbooks_directory, "config/cookbooks"
 set :stream_chef_output, true 
 ```
 
-You can also perform some tasks by hand. Here's how to get information:
+You can also perform a lot of tasks by hand if you need to. Here's how to get
+information:
+
+``` bash
+$ cap --tasks roundsman
+```
+
+To get more information, use the `--explain` flag and specify a task name, like
+this:
 
 ``` bash
 $ cap --explain roundsman:install_ruby
-$ cap --explain roundsman:update_system
-$ cap --explain roundsman:install_chef
-$ cap --explain roundsman:run
 ```
+
+## How does it work?
+
+What Roundsman does is this:
+
+It will determine if you have the right version of Ruby installed. Your machine
+might already have an older version of Ruby installed, so if it needs to, it
+will use [ruby-build](https://github.com/sstephenson/ruby-build) to install the
+version of Ruby you need for your application.
+
+Then, it will install check the version of chef-solo and install or upgrade as
+needed.
+
+It will then copy over the cookbooks from your local machine to your deployment
+machine. This means that you don't need to commit every change while your still
+working on it.
+
+It will create your node.json file based upon your Capistrano configuration and
+run the recipes needed.
+
+This is all done in Capistrano hooks, using Capistrano methods like `run`, so
+you can determine when and how your recipes are run.
 
 ## Tips
 
