@@ -111,6 +111,20 @@ after "deploy:symlink" do
 end
 ```
 
+If you want a recipe to only run on a specific role, you can do so like this:
+
+``` ruby
+# config/deploy.rb
+
+namespace :install do
+  task :postgres, :roles => [:db] do
+    roundsman.chef "recipe[main::postgres]"
+  end
+end
+
+before "deploy:update_code", "install:postgres"
+```
+
 ## Configuration
 
 By default, Roundsman will make a lot of Capistrano's configuration available to chef.
