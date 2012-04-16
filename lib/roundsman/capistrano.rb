@@ -71,7 +71,7 @@ require 'tempfile'
       chef.default
     end
 
-    task :ensure_roundsman_working_dir, :except => { :no_release => true } do
+    def ensure_roundsman_working_dir
       unless @ensured_roundsman_working_dir
         run "mkdir -p #{fetch(:roundsman_working_dir)}"
         sudo "chown -R #{user} #{fetch(:roundsman_working_dir)}"

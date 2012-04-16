@@ -227,7 +227,8 @@ extension.
 If you want to help out, please! Create an issue or do a pull request and I
 will take a look at it.
 
-To get this project up and running:
+To get this project up and running, make sure you have VirtualBox, because we
+use vagrant. Then all you need to do is:
 
 ``` bash
 bundle install
