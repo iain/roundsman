@@ -82,7 +82,7 @@ require 'tempfile'
 
     namespace :install do
 
-      set_default :ruby_version, "1.9.3-p125"
+      set_default :ruby_version, "1.9.3-p194"
       set_default :care_about_ruby_version, true
       set_default :ruby_install_dir, "/usr/local"
 
