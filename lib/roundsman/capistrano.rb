@@ -45,6 +45,9 @@ require 'tempfile'
 
     set_default :roundsman_working_dir, "/tmp/roundsman"
     set_default :stream_roundsman_output, true
+    set_default(:roundsman_user) { fetch(:user) rescue capture('whoami').strip }
+    set_default :debug_chef, false
+    set_default :package_manager, 'apt-get'
 
     desc "Lists configuration"
     task :configuration do
@@ -74,7 +77,7 @@ require 'tempfile'
     def ensure_roundsman_working_dir
       unless @ensured_roundsman_working_dir
         run "mkdir -p #{fetch(:roundsman_working_dir)}"
-        sudo "chown -R #{user} #{fetch(:roundsman_working_dir)}"
+        sudo "chown -R #{fetch(:roundsman_user)} #{fetch(:roundsman_working_dir)}"
         @ensured_roundsman_working_dir = true
       end
     end
@@ -121,8 +124,8 @@ require 'tempfile'
       desc "Installs the dependencies needed for Ruby"
       task :dependencies, :except => { :no_release => true } do
         ensure_supported_distro
-        sudo "aptitude -yq update"
-        sudo "aptitude -yq install #{fetch(:ruby_dependencies).join(' ')}"
+        sudo "#{fetch(:package_manager)} -yq update"
+        sudo "#{fetch(:package_manager)} -yq install #{fetch(:ruby_dependencies).join(' ')}"
       end
 
       desc "Checks if the ruby version installed matches the version specified"
@@ -196,7 +199,7 @@ require 'tempfile'
       desc "Runs the existing chef configuration"
       task :chef_solo, :except => { :no_release => true } do
         logger.info "Now running #{fetch(:run_list).join(', ')}"
-        sudo "chef-solo -c #{roundsman_working_dir("solo.rb")} -j #{roundsman_working_dir("solo.json")}"
+        sudo "chef-solo -c #{roundsman_working_dir("solo.rb")} -j #{roundsman_working_dir("solo.json")}#{' -l debug' if fetch(:debug_chef)}"
       end
 
       def ensure_cookbooks_exists
