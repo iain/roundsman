@@ -239,15 +239,16 @@ require 'tempfile'
         new_hash = {}
         hash.each do |key, value|
           real_value = if value.respond_to?(:call)
-                         begin
-                           value.call
-                         rescue ::Capistrano::CommandError => e
-                           logger.debug "Could not get the value of #{key}: #{e.message}"
-                           nil
-                         end
-                       else
-                         value
-                       end
+            next if key == :password # do not prompt user for password, when they opt not to provide one it is usually because keys are being used, instead
+             begin
+               value.call
+             rescue ::Capistrano::CommandError => e
+               logger.debug "Could not get the value of #{key}: #{e.message}"
+               nil
+             end
+           else
+             value
+           end
 
           if real_value.is_a?(Hash)
             real_value = remove_procs_from_hash(real_value)
