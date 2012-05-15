@@ -173,6 +173,7 @@ require 'tempfile'
       set_default :chef_version, "~> 0.10.8"
       set_default :cookbooks_directory, ["config/cookbooks"]
       set_default :copyfile_disable, false
+      set_default :filter_sensitive_settings, [ /password/, /filter_sensitive_settings/ ]
 
       task :default, :except => { :no_release => true } do
         ensure_cookbooks_exists
@@ -220,11 +221,11 @@ require 'tempfile'
       def generate_config
         cookbook_string = cookbooks_paths.map { |c| "File.join(root, #{c.to_s.inspect})" }.join(', ')
         solo_rb = <<-RUBY
-        root = File.expand_path(File.dirname(__FILE__))
-        file_cache_path File.join(root, "cache")
-        cookbook_path [ #{cookbook_string} ]
-          RUBY
-          put solo_rb, roundsman_working_dir("solo.rb"), :via => :scp
+          root = File.expand_path(File.dirname(__FILE__))
+          file_cache_path File.join(root, "cache")
+          cookbook_path [ #{cookbook_string} ]
+        RUBY
+        put solo_rb, roundsman_working_dir("solo.rb"), :via => :scp
       end
 
       def generate_attributes
@@ -238,22 +239,22 @@ require 'tempfile'
       def remove_procs_from_hash(hash)
         new_hash = {}
         hash.each do |key, value|
+          next if fetch(:filter_sensitive_settings).find { |regex| regex.match(key) }
           real_value = if value.respond_to?(:call)
-            next if key == :password # do not prompt user for password, when they opt not to provide one it is usually because keys are being used, instead
-             begin
-               value.call
-             rescue ::Capistrano::CommandError => e
-               logger.debug "Could not get the value of #{key}: #{e.message}"
-               nil
-             end
-           else
-             value
-           end
+            begin
+              value.call
+            rescue ::Capistrano::CommandError => e
+              logger.debug "Could not get the value of #{key}: #{e.message}"
+              nil
+            end
+          else
+            value
+          end
 
           if real_value.is_a?(Hash)
             real_value = remove_procs_from_hash(real_value)
           end
-          unless real_value.class.to_s.include?("Capistrano") # skip capistrano tasks
+          if real_value && !real_value.class.to_s.include?("Capistrano") # skip capistrano tasks
             new_hash[key] = real_value
           end
         end
