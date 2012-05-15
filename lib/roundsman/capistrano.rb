@@ -101,7 +101,7 @@ require 'tempfile'
           set -e
           cd #{roundsman_working_dir}
           rm -rf ruby-build
-          git clone -q git://github.com/sstephenson/ruby-build.git
+          git clone -q https://github.com/sstephenson/ruby-build.git
           cd ruby-build
           ./install.sh
           ruby-build #{fetch(:ruby_version)} #{fetch(:ruby_install_dir)}
