@@ -45,7 +45,7 @@ require 'tempfile'
 
     set_default :roundsman_working_dir, "/tmp/roundsman"
     set_default :stream_roundsman_output, true
-    set_default(:roundsman_user) { fetch(:user) rescue capture('whoami').strip }
+    set_default(:roundsman_user) { fetch(:user) { capture('whoami').strip } }
     set_default :debug_chef, false
     set_default :package_manager, 'apt-get'
 
