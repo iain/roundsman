@@ -104,7 +104,7 @@ require 'tempfile'
           git clone -q https://github.com/sstephenson/ruby-build.git
           cd ruby-build
           ./install.sh
-          ruby-build #{fetch(:ruby_version)} #{fetch(:ruby_install_dir)}
+          CONFIGURE_OPTS='--disable-install-rdoc' ruby-build #{fetch(:ruby_version)} #{fetch(:ruby_install_dir)}
         }
       end
 
