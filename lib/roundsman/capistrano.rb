@@ -8,7 +8,7 @@ require 'tempfile'
     def run_list(*recipes)
       if recipes.any?
         set :run_list, recipes
-        install_ruby if fetch(:run_roundsman_checks, true) && install_ruby?
+        install_ruby
         run_chef
       else
         Array(fetch(:run_list))
@@ -48,11 +48,10 @@ require 'tempfile'
     set_default(:roundsman_user) { fetch(:user) { capture('whoami').strip } }
     set_default :debug_chef, false
     set_default :package_manager, 'apt-get'
-    set_default :run_roundsman_checks, true
 
     desc "Lists configuration"
     task :configuration do
-      @_defaults.sort_by {|sym| sym.to_s}.each do |name|
+      @_defaults.sort.each do |name|
         display_name = ":#{name},".ljust(30)
         if variables[name].is_a?(Proc)
           value = "<block>"
@@ -76,29 +75,10 @@ require 'tempfile'
     end
 
     def ensure_roundsman_working_dir
-      run "mkdir -p #{fetch(:roundsman_working_dir)}"
-      run "mkdir -p #{fetch(:roundsman_working_dir)}/cache"
-      sudo "chown -R #{fetch(:roundsman_user)} #{fetch(:roundsman_working_dir)}"
-    end
-
-    def install_ruby?
-      installed_version = capture("ruby --version || true").strip
-      if installed_version.include?("not found")
-        logger.info "No version of Ruby could be found."
-        return true
-      end
-      required_version = fetch(:ruby_version).gsub("-", "")
-      if fetch(:care_about_ruby_version)
-        if installed_version.include?(required_version)
-          logger.info "Ruby #{installed_version} matches the required version: #{required_version}."
-          return false
-        else
-          logger.info "Ruby version mismatch. Installed version: #{installed_version}, required is #{required_version}"
-          return true
-        end
-      else
-        logger.info "Already installed Ruby #{installed_version}, not #{required_version}. Set :care_about_ruby_version if you want to fix this."
-        return false
+      unless @ensured_roundsman_working_dir
+        run "mkdir -p #{fetch(:roundsman_working_dir)}/cache"
+        sudo "chown -R #{fetch(:roundsman_user)} #{fetch(:roundsman_working_dir)}"
+        @ensured_roundsman_working_dir = true
       end
     end
 
@@ -158,19 +138,41 @@ require 'tempfile'
       end
 
       def ensure_supported_distro
-        logger.info "Using Linux distribution #{distribution}"
-        abort "This distribution is not (yet) supported." unless distribution.include?("Ubuntu")
+        unless @ensured_supported_distro
+          logger.info "Using Linux distribution #{distribution}"
+          abort "This distribution is not (yet) supported." unless distribution.include?("Ubuntu")
+          @ensured_supported_distro = true
+        end
+      end
+
+      def install_ruby?
+        installed_version = capture("ruby --version || true").strip
+        if installed_version.include?("not found")
+          logger.info "No version of Ruby could be found."
+          return true
+        end
+        required_version = fetch(:ruby_version).gsub("-", "")
+        if installed_version.include?(required_version)
+          if fetch(:care_about_ruby_version)
+            logger.info "Ruby #{installed_version} matches the required version: #{required_version}."
+            return false
+          else
+            logger.info "Already installed Ruby #{installed_version}, not #{required_version}. Set :care_about_ruby_version if you want to fix this."
+            return false
+          end
+        else
+          logger.info "Ruby version mismatch. Installed version: #{installed_version}, required is #{required_version}"
+          return true
+        end
       end
 
     end
 
     namespace :chef do
 
-      set_default :chef_version, "~> 10.18.2"
+      set_default :chef_version, "~> 0.10.8"
       set_default :cookbooks_directory, ["config/cookbooks"]
-      set_default :databags_directory, "config/data_bags"
       set_default :copyfile_disable, false
-      set_default :verbose_logging, true
       set_default :filter_sensitive_settings, [ /password/, /filter_sensitive_settings/ ]
 
       task :default, :except => { :no_release => true } do
@@ -181,7 +183,7 @@ require 'tempfile'
 
       desc "Generates the config and copies over the cookbooks to the server"
       task :prepare_chef, :except => { :no_release => true } do
-        install if fetch(:run_roundsman_checks, true) && install_chef?
+        install if install_chef?
         ensure_cookbooks_exists
         generate_config
         generate_attributes
@@ -190,27 +192,15 @@ require 'tempfile'
 
       desc "Installs chef"
       task :install, :except => { :no_release => true } do
-        if self[:rvm_type] == :user
-          run "gem uninstall -xaI chef || true"
-          run "gem install chef -v #{fetch(:chef_version).inspect} --quiet --no-ri --no-rdoc"
-          run "gem install ruby-shadow --quiet --no-ri --no-rdoc"
-        else
-          sudo "gem uninstall -xaI chef || true"
-          sudo "gem install chef -v #{fetch(:chef_version).inspect} --quiet --no-ri --no-rdoc"
-          sudo "gem install ruby-shadow --quiet --no-ri --no-rdoc"
-        end
+        sudo "gem uninstall -xaI chef || true"
+        sudo "gem install chef -v #{fetch(:chef_version).inspect} --quiet --no-ri --no-rdoc"
+        sudo "gem install ruby-shadow --quiet --no-ri --no-rdoc"
       end
 
       desc "Runs the existing chef configuration"
       task :chef_solo, :except => { :no_release => true } do
         logger.info "Now running #{fetch(:run_list).join(', ')}"
-        old_sudo = self[:sudo]
-        if self[:rvm_type] == :user
-          self[:sudo] = "rvmsudo_secure_path=1 #{File.join(rvm_bin_path, "rvmsudo")}"
-        end
-
         sudo "chef-solo -c #{roundsman_working_dir("solo.rb")} -j #{roundsman_working_dir("solo.json")}#{' -l debug' if fetch(:debug_chef)}"
-        self[:sudo] = old_sudo
       end
 
       def ensure_cookbooks_exists
@@ -220,11 +210,6 @@ require 'tempfile'
 
       def cookbooks_paths
         Array(fetch(:cookbooks_directory)).select { |path| File.exist?(path) }
-      end
-
-      def databags_path
-        path = fetch(:databags_directory)
-        File.exist?(path) ? path : nil
       end
 
       def install_chef?
@@ -239,8 +224,6 @@ require 'tempfile'
           root = File.expand_path(File.dirname(__FILE__))
           file_cache_path File.join(root, "cache")
           cookbook_path [ #{cookbook_string} ]
-          verbose_logging #{fetch(:verbose_logging)}
-          data_bag_path File.join(root, #{fetch(:databags_directory).to_s.inspect})
         RUBY
         put solo_rb, roundsman_working_dir("solo.rb"), :via => :scp
       end
@@ -256,7 +239,7 @@ require 'tempfile'
       def remove_procs_from_hash(hash)
         new_hash = {}
         hash.each do |key, value|
-          next if fetch(:filter_sensitive_settings).find { |regex| regex.match(key.to_s) }
+          next if fetch(:filter_sensitive_settings).find { |regex| regex.match(key) }
           real_value = if value.respond_to?(:call)
             begin
               value.call
@@ -271,7 +254,7 @@ require 'tempfile'
           if real_value.is_a?(Hash)
             real_value = remove_procs_from_hash(real_value)
           end
-          if real_value != nil && !real_value.class.to_s.include?("Capistrano") # skip capistrano tasks
+          if real_value && !real_value.class.to_s.include?("Capistrano") # skip capistrano tasks
             new_hash[key] = real_value
           end
         end
@@ -283,7 +266,7 @@ require 'tempfile'
         begin
           tar_file.close
           env_vars = fetch(:copyfile_disable) && RUBY_PLATFORM.downcase.include?('darwin') ? "COPYFILE_DISABLE=true" : ""
-          system "#{env_vars} tar -cjf #{tar_file.path} #{cookbooks_paths.join(' ')} #{databags_path.to_s}"
+          system "#{env_vars} tar -cjf #{tar_file.path} #{cookbooks_paths.join(' ')}"
           upload tar_file.path, roundsman_working_dir("cookbooks.tar"), :via => :scp
           run "cd #{roundsman_working_dir} && tar -xjf cookbooks.tar"
         ensure
