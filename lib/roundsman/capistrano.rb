@@ -209,7 +209,15 @@ require 'tempfile'
       end
 
       def cookbooks_paths
-        Array(fetch(:cookbooks_directory)).select { |path| File.exist?(path) }
+        Array(fetch(:cookbook_path)).select { |path| File.exist?(path) }
+      end
+
+      def roles_path
+        fetch(:role_path)
+      end
+
+      def data_bags_path
+        fetch(:data_bag_path)
       end
 
       def install_chef?
@@ -220,11 +228,17 @@ require 'tempfile'
 
       def generate_config
         cookbook_string = cookbooks_paths.map { |c| "File.join(root, #{c.to_s.inspect})" }.join(', ')
+        role_string = "File.join(root, #{roles_path.to_s.inspect})" if roles_path
+        data_bag_string = "File.join(root, #{data_bags_path.to_s.inspect})" if data_bags_path
         solo_rb = <<-RUBY
           root = File.expand_path(File.dirname(__FILE__))
           file_cache_path File.join(root, "cache")
           cookbook_path [ #{cookbook_string} ]
         RUBY
+
+        solo_rb << "role_path #{role_string}\n" if role_string
+        solo_rb << "data_bag_path #{data_bag_string}\n" if data_bag_string
+
         put solo_rb, roundsman_working_dir("solo.rb"), :via => :scp
       end
 
