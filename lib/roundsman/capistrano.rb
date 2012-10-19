@@ -244,6 +244,10 @@ require 'tempfile'
 
       def generate_attributes
         attrs = remove_procs_from_hash variables.dup
+
+        remove_attrs = fetch(:roundsman_skip_attrs)
+        attrs.delete(*remove_attrs) if remove_attrs
+
         put attrs.to_json, roundsman_working_dir("solo.json"), :via => :scp
       end
 
