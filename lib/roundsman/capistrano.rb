@@ -256,7 +256,7 @@ require 'tempfile'
           if real_value.is_a?(Hash)
             real_value = remove_procs_from_hash(real_value)
           end
-          if real_value && !real_value.class.to_s.include?("Capistrano") # skip capistrano tasks
+          if real_value != nil && !real_value.class.to_s.include?("Capistrano") # skip capistrano tasks
             new_hash[key] = real_value
           end
         end
