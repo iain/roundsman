@@ -77,6 +77,7 @@ require 'tempfile'
     def ensure_roundsman_working_dir
       unless @ensured_roundsman_working_dir
         run "mkdir -p #{fetch(:roundsman_working_dir)}"
+        run "mkdir -p #{fetch(:roundsman_working_dir)}/cache"
         sudo "chown -R #{fetch(:roundsman_user)} #{fetch(:roundsman_working_dir)}"
         @ensured_roundsman_working_dir = true
       end
