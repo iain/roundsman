@@ -84,6 +84,27 @@ require 'tempfile'
       end
     end
 
+    def install_ruby?
+      installed_version = capture("ruby --version || true").strip
+      if installed_version.include?("not found")
+        logger.info "No version of Ruby could be found."
+        return true
+      end
+      required_version = fetch(:ruby_version).gsub("-", "")
+      if installed_version.include?(required_version)
+        if fetch(:care_about_ruby_version)
+          logger.info "Ruby #{installed_version} matches the required version: #{required_version}."
+          return false
+        else
+          logger.info "Already installed Ruby #{installed_version}, not #{required_version}. Set :care_about_ruby_version if you want to fix this."
+          return false
+        end
+      else
+        logger.info "Ruby version mismatch. Installed version: #{installed_version}, required is #{required_version}"
+        return true
+      end
+    end
+
 
     namespace :install do
 
@@ -144,27 +165,6 @@ require 'tempfile'
           logger.info "Using Linux distribution #{distribution}"
           abort "This distribution is not (yet) supported." unless distribution.include?("Ubuntu")
           @ensured_supported_distro = true
-        end
-      end
-
-      def install_ruby?
-        installed_version = capture("ruby --version || true").strip
-        if installed_version.include?("not found")
-          logger.info "No version of Ruby could be found."
-          return true
-        end
-        required_version = fetch(:ruby_version).gsub("-", "")
-        if installed_version.include?(required_version)
-          if fetch(:care_about_ruby_version)
-            logger.info "Ruby #{installed_version} matches the required version: #{required_version}."
-            return false
-          else
-            logger.info "Already installed Ruby #{installed_version}, not #{required_version}. Set :care_about_ruby_version if you want to fix this."
-            return false
-          end
-        else
-          logger.info "Ruby version mismatch. Installed version: #{installed_version}, required is #{required_version}"
-          return true
         end
       end
 
