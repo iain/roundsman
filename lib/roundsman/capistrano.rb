@@ -52,7 +52,7 @@ require 'tempfile'
 
     desc "Lists configuration"
     task :configuration do
-      @_defaults.sort.each do |name|
+      @_defaults.sort_by {|sym| sym.to_s}.each do |name|
         display_name = ":#{name},".ljust(30)
         if variables[name].is_a?(Proc)
           value = "<block>"
@@ -241,7 +241,7 @@ require 'tempfile'
       def remove_procs_from_hash(hash)
         new_hash = {}
         hash.each do |key, value|
-          next if fetch(:filter_sensitive_settings).find { |regex| regex.match(key) }
+          next if fetch(:filter_sensitive_settings).find { |regex| regex.match(key.to_s) }
           real_value = if value.respond_to?(:call)
             begin
               value.call
