@@ -8,7 +8,7 @@ require 'tempfile'
     def run_list(*recipes)
       if recipes.any?
         set :run_list, recipes
-        install_ruby
+        install_ruby if fetch(:run_roundsman_checks, true) && install_ruby?
         run_chef
       else
         Array(fetch(:run_list))
@@ -48,10 +48,11 @@ require 'tempfile'
     set_default(:roundsman_user) { fetch(:user) { capture('whoami').strip } }
     set_default :debug_chef, false
     set_default :package_manager, 'apt-get'
+    set_default :run_roundsman_checks, true
 
     desc "Lists configuration"
     task :configuration do
-      @_defaults.sort.each do |name|
+      @_defaults.sort_by {|sym| sym.to_s}.each do |name|
         display_name = ":#{name},".ljust(30)
         if variables[name].is_a?(Proc)
           value = "<block>"
@@ -76,7 +77,29 @@ require 'tempfile'
 
     def ensure_roundsman_working_dir
       run "mkdir -p #{fetch(:roundsman_working_dir)}"
+      run "mkdir -p #{fetch(:roundsman_working_dir)}/cache"
       sudo "chown -R #{fetch(:roundsman_user)} #{fetch(:roundsman_working_dir)}"
+    end
+
+    def install_ruby?
+      installed_version = capture("ruby --version || true").strip
+      if installed_version.include?("not found")
+        logger.info "No version of Ruby could be found."
+        return true
+      end
+      required_version = fetch(:ruby_version).gsub("-", "")
+      if installed_version.include?(required_version)
+        if fetch(:care_about_ruby_version)
+          logger.info "Ruby #{installed_version} matches the required version: #{required_version}."
+          return false
+        else
+          logger.info "Already installed Ruby #{installed_version}, not #{required_version}. Set :care_about_ruby_version if you want to fix this."
+          return false
+        end
+      else
+        logger.info "Ruby version mismatch. Installed version: #{installed_version}, required is #{required_version}"
+        return true
+      end
     end
 
 
@@ -139,27 +162,6 @@ require 'tempfile'
         abort "This distribution is not (yet) supported." unless distribution.include?("Ubuntu")
       end
 
-      def install_ruby?
-        installed_version = capture("ruby --version || true").strip
-        if installed_version.include?("not found")
-          logger.info "No version of Ruby could be found."
-          return true
-        end
-        required_version = fetch(:ruby_version).gsub("-", "")
-        if installed_version.include?(required_version)
-          if fetch(:care_about_ruby_version)
-            logger.info "Ruby #{installed_version} matches the required version: #{required_version}."
-            return false
-          else
-            logger.info "Already installed Ruby #{installed_version}, not #{required_version}. Set :care_about_ruby_version if you want to fix this."
-            return false
-          end
-        else
-          logger.info "Ruby version mismatch. Installed version: #{installed_version}, required is #{required_version}"
-          return true
-        end
-      end
-
     end
 
     namespace :chef do
@@ -177,7 +179,7 @@ require 'tempfile'
 
       desc "Generates the config and copies over the cookbooks to the server"
       task :prepare_chef, :except => { :no_release => true } do
-        install if install_chef?
+        install if fetch(:run_roundsman_checks, true) && install_chef?
         ensure_cookbooks_exists
         generate_config
         generate_attributes
@@ -233,7 +235,7 @@ require 'tempfile'
       def remove_procs_from_hash(hash)
         new_hash = {}
         hash.each do |key, value|
-          next if fetch(:filter_sensitive_settings).find { |regex| regex.match(key) }
+          next if fetch(:filter_sensitive_settings).find { |regex| regex.match(key.to_s) }
           real_value = if value.respond_to?(:call)
             begin
               value.call
