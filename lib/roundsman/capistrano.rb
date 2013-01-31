@@ -175,6 +175,7 @@ require 'tempfile'
       set_default :chef_version, "~> 10.18.2"
       set_default :cookbooks_directory, ["config/cookbooks"]
       set_default :copyfile_disable, false
+      set_default :verbose_logging, true
       set_default :filter_sensitive_settings, [ /password/, /filter_sensitive_settings/ ]
 
       task :default, :except => { :no_release => true } do
@@ -226,6 +227,7 @@ require 'tempfile'
           root = File.expand_path(File.dirname(__FILE__))
           file_cache_path File.join(root, "cache")
           cookbook_path [ #{cookbook_string} ]
+          verbose_logging #{fetch(:verbose_logging)}
         RUBY
         put solo_rb, roundsman_working_dir("solo.rb"), :via => :scp
       end
