@@ -209,6 +209,19 @@ you can determine when and how your recipes are run.
 
 ## Tips
 
+### Roles
+
+roundsman supports loading roles.
+you can use JSON based role-definition file like this:
+
+``` ruby
+# config/deploy.rb
+
+set_chef_roles "app"
+```
+
+By default, Roundsman will load role-definition file from config/roles/#{role_name}.json .
+
 ### Colors
 
 Capistrano and Chef both give a lot of output. Check out
