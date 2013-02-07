@@ -229,7 +229,7 @@ require 'tempfile'
       end
 
       def databags_path
-        path = fetch(:databags_directory) 
+        path = fetch(:databags_directory)
         File.exist?(path) ? path : nil
       end
 
