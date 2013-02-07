@@ -88,17 +88,17 @@ require 'tempfile'
         return true
       end
       required_version = fetch(:ruby_version).gsub("-", "")
-      if installed_version.include?(required_version)
-        if fetch(:care_about_ruby_version)
+      if fetch(:care_about_ruby_version)
+        if installed_version.include?(required_version)
           logger.info "Ruby #{installed_version} matches the required version: #{required_version}."
           return false
         else
-          logger.info "Already installed Ruby #{installed_version}, not #{required_version}. Set :care_about_ruby_version if you want to fix this."
-          return false
+          logger.info "Ruby version mismatch. Installed version: #{installed_version}, required is #{required_version}"
+          return true
         end
       else
-        logger.info "Ruby version mismatch. Installed version: #{installed_version}, required is #{required_version}"
-        return true
+        logger.info "Already installed Ruby #{installed_version}, not #{required_version}. Set :care_about_ruby_version if you want to fix this."
+        return false
       end
     end
 
