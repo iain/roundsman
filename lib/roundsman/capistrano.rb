@@ -76,12 +76,9 @@ require 'tempfile'
     end
 
     def ensure_roundsman_working_dir
-      unless @ensured_roundsman_working_dir
-        run "mkdir -p #{fetch(:roundsman_working_dir)}"
-        run "mkdir -p #{fetch(:roundsman_working_dir)}/cache"
-        sudo "chown -R #{fetch(:roundsman_user)} #{fetch(:roundsman_working_dir)}"
-        @ensured_roundsman_working_dir = true
-      end
+      run "mkdir -p #{fetch(:roundsman_working_dir)}"
+      run "mkdir -p #{fetch(:roundsman_working_dir)}/cache"
+      sudo "chown -R #{fetch(:roundsman_user)} #{fetch(:roundsman_working_dir)}"
     end
 
     def install_ruby?
@@ -161,11 +158,8 @@ require 'tempfile'
       end
 
       def ensure_supported_distro
-        unless @ensured_supported_distro
-          logger.info "Using Linux distribution #{distribution}"
-          abort "This distribution is not (yet) supported." unless distribution.include?("Ubuntu")
-          @ensured_supported_distro = true
-        end
+        logger.info "Using Linux distribution #{distribution}"
+        abort "This distribution is not (yet) supported." unless distribution.include?("Ubuntu")
       end
 
     end
