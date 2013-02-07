@@ -198,7 +198,7 @@ Then, it will install check the version of chef-solo and install or upgrade as
 needed.
 
 It will then copy over the cookbooks from your local machine to your deployment
-machine. This means that you don't need to commit every change while your still
+machine. This means that you don't need to commit every change while you're still
 working on it.
 
 It will create your node.json file based upon your Capistrano configuration and

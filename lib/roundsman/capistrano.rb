@@ -88,12 +88,9 @@ require 'active_support/core_ext/hash/deep_merge'
     end
 
     def ensure_roundsman_working_dir
-      unless @ensured_roundsman_working_dir
-        run "mkdir -p #{fetch(:roundsman_working_dir)}"
-        run "mkdir -p #{fetch(:roundsman_working_dir)}/cache"
-        sudo "chown -R #{fetch(:roundsman_user)} #{fetch(:roundsman_working_dir)}"
-        @ensured_roundsman_working_dir = true
-      end
+      run "mkdir -p #{fetch(:roundsman_working_dir)}"
+      run "mkdir -p #{fetch(:roundsman_working_dir)}/cache"
+      sudo "chown -R #{fetch(:roundsman_user)} #{fetch(:roundsman_working_dir)}"
     end
 
     def install_ruby?
@@ -103,17 +100,17 @@ require 'active_support/core_ext/hash/deep_merge'
         return true
       end
       required_version = fetch(:ruby_version).gsub("-", "")
-      if installed_version.include?(required_version)
-        if fetch(:care_about_ruby_version)
+      if fetch(:care_about_ruby_version)
+        if installed_version.include?(required_version)
           logger.info "Ruby #{installed_version} matches the required version: #{required_version}."
           return false
         else
-          logger.info "Already installed Ruby #{installed_version}, not #{required_version}. Set :care_about_ruby_version if you want to fix this."
-          return false
+          logger.info "Ruby version mismatch. Installed version: #{installed_version}, required is #{required_version}"
+          return true
         end
       else
-        logger.info "Ruby version mismatch. Installed version: #{installed_version}, required is #{required_version}"
-        return true
+        logger.info "Already installed Ruby #{installed_version}, not #{required_version}. Set :care_about_ruby_version if you want to fix this."
+        return false
       end
     end
 
@@ -173,11 +170,8 @@ require 'active_support/core_ext/hash/deep_merge'
       end
 
       def ensure_supported_distro
-        unless @ensured_supported_distro
-          logger.info "Using Linux distribution #{distribution}"
-          abort "This distribution is not (yet) supported." unless distribution.include?("Ubuntu")
-          @ensured_supported_distro = true
-        end
+        logger.info "Using Linux distribution #{distribution}"
+        abort "This distribution is not (yet) supported." unless distribution.include?("Ubuntu")
       end
 
     end
@@ -188,7 +182,9 @@ require 'active_support/core_ext/hash/deep_merge'
       set_default :chef_attributes, Hash.new
       set_default :cookbooks_directory, ["config/cookbooks"]
       set_default :roles_directory, "config/roles"
+      set_default :databags_directory, "config/data_bags"
       set_default :copyfile_disable, false
+      set_default :verbose_logging, true
       set_default :filter_sensitive_settings, [ /password/, /filter_sensitive_settings/ ]
 
       task :default, :except => { :no_release => true } do
@@ -228,6 +224,11 @@ require 'active_support/core_ext/hash/deep_merge'
         Array(fetch(:cookbooks_directory)).select { |path| File.exist?(path) }
       end
 
+      def databags_path
+        path = fetch(:databags_directory)
+        File.exist?(path) ? path : nil
+      end
+
       def install_chef?
         required_version = fetch(:chef_version).inspect
         output = capture("gem list -i -v #{required_version} || true").strip
@@ -240,6 +241,8 @@ require 'active_support/core_ext/hash/deep_merge'
           root = File.expand_path(File.dirname(__FILE__))
           file_cache_path File.join(root, "cache")
           cookbook_path [ #{cookbook_string} ]
+          verbose_logging #{fetch(:verbose_logging)}
+          data_bag_path File.join(root, #{fetch(:databags_directory).to_s.inspect})
         RUBY
         put solo_rb, roundsman_working_dir("solo.rb"), :via => :scp
       end
@@ -274,7 +277,7 @@ require 'active_support/core_ext/hash/deep_merge'
           if real_value.is_a?(Hash)
             real_value = remove_procs_from_hash(real_value)
           end
-          if real_value && !real_value.class.to_s.include?("Capistrano") # skip capistrano tasks
+          if real_value != nil && !real_value.class.to_s.include?("Capistrano") # skip capistrano tasks
             new_hash[key] = real_value
           end
         end
@@ -286,7 +289,7 @@ require 'active_support/core_ext/hash/deep_merge'
         begin
           tar_file.close
           env_vars = fetch(:copyfile_disable) && RUBY_PLATFORM.downcase.include?('darwin') ? "COPYFILE_DISABLE=true" : ""
-          system "#{env_vars} tar -cjf #{tar_file.path} #{cookbooks_paths.join(' ')}"
+          system "#{env_vars} tar -cjf #{tar_file.path} #{cookbooks_paths.join(' ')} #{databags_path.to_s}"
           upload tar_file.path, roundsman_working_dir("cookbooks.tar"), :via => :scp
           run "cd #{roundsman_working_dir} && tar -xjf cookbooks.tar"
         ensure
