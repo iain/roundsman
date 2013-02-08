@@ -190,15 +190,27 @@ require 'tempfile'
 
       desc "Installs chef"
       task :install, :except => { :no_release => true } do
-        sudo "gem uninstall -xaI chef || true"
-        sudo "gem install chef -v #{fetch(:chef_version).inspect} --quiet --no-ri --no-rdoc"
-        sudo "gem install ruby-shadow --quiet --no-ri --no-rdoc"
+        if self[:rvm_type] == :user
+          run "gem uninstall -xaI chef || true"
+          run "gem install chef -v #{fetch(:chef_version).inspect} --quiet --no-ri --no-rdoc"
+          run "gem install ruby-shadow --quiet --no-ri --no-rdoc"
+        else
+          sudo "gem uninstall -xaI chef || true"
+          sudo "gem install chef -v #{fetch(:chef_version).inspect} --quiet --no-ri --no-rdoc"
+          sudo "gem install ruby-shadow --quiet --no-ri --no-rdoc"
+        end
       end
 
       desc "Runs the existing chef configuration"
       task :chef_solo, :except => { :no_release => true } do
         logger.info "Now running #{fetch(:run_list).join(', ')}"
+        old_sudo = self[:sudo]
+        if self[:rvm_type] == :user
+          self[:sudo] = "rvmsudo_secure_path=1 #{File.join(rvm_bin_path, "rvmsudo")}"
+        end
+
         sudo "chef-solo -c #{roundsman_working_dir("solo.rb")} -j #{roundsman_working_dir("solo.json")}#{' -l debug' if fetch(:debug_chef)}"
+        self[:sudo] = old_sudo
       end
 
       def ensure_cookbooks_exists
