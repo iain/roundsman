@@ -32,7 +32,12 @@ require 'tempfile'
     end
 
     def sudo(command, *args)
-      run "#{top.sudo} #{command}", *args
+      envvars = (self[:default_environment] || {}).collect{|k, v| "#{k}=#{v}"}
+      if envvars
+        run "#{top.sudo} env #{envvars.join(" ")} #{command}", *args
+      else
+        run "#{top.sudo} #{command}", *args
+      end
     end
 
     def run(*args)
@@ -190,7 +195,7 @@ require 'tempfile'
 
       desc "Installs chef"
       task :install, :except => { :no_release => true } do
-        if self[:rvm_type] == :user
+        if self[:rvm_type] == :user or self[:rbenv_path]
           run "gem uninstall -xaI chef || true"
           run "gem install chef -v #{fetch(:chef_version).inspect} --quiet --no-ri --no-rdoc"
           run "gem install ruby-shadow --quiet --no-ri --no-rdoc"
