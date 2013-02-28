@@ -255,8 +255,9 @@ require 'tempfile'
       #     set(:root_password) { Capistrano::CLI.password_prompt("Root password: ") }
       def remove_procs_from_hash(hash)
         new_hash = {}
+        sensitive_settings = fetch(:filter_sensitive_settings)
         hash.each do |key, value|
-          next if fetch(:filter_sensitive_settings).find { |regex| regex.match(key.to_s) }
+          next if sensitive_settings and sensitive_settings.find { |regex| regex.match(key.to_s) }
           real_value = if value.respond_to?(:call)
             begin
               value.call
