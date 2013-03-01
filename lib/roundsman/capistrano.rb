@@ -144,7 +144,14 @@ require 'tempfile'
       desc "Installs the dependencies needed for Ruby"
       task :dependencies, :except => { :no_release => true } do
         ensure_supported_distro
-        sudo "#{fetch(:package_manager)} -yq update"
+        # Cooperation with 'apt' cookbook. Do not update package cache on each run.
+        if ::File.exists?('/var/lib/apt/periodic/update-success-stamp')
+          if ::File.mtime('/var/lib/apt/periodic/update-success-stamp') < Time.now - 86400*2
+            sudo "#{fetch(:package_manager)} -yq update"
+          end
+        else
+          sudo "#{fetch(:package_manager)} -yq update"
+        end
         sudo "#{fetch(:package_manager)} -yq install #{fetch(:ruby_dependencies).join(' ')}"
       end
 
