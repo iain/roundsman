@@ -17,5 +17,6 @@ Gem::Specification.new do |gem|
 
   gem.add_runtime_dependency "capistrano", "~> 2.12"
   gem.add_runtime_dependency "json",       "~> 1.0"
+  gem.add_runtime_dependency "active_support"
   gem.add_development_dependency "vagrant", "~> 1.0"
 end

@@ -1,7 +1,19 @@
 require 'json'
 require 'tempfile'
+require 'active_support/core_ext/hash/deep_merge'
 
 ::Capistrano::Configuration.instance(:must_exist).load do
+
+  def set_chef_roles(*roles)
+    attributes = fetch(:chef_attributes)
+    roles.each do |role|
+      json_path = "#{fetch(:roles_directory)}/#{role.to_s}.json"
+      attributes.deep_merge! JSON.load(File.new(json_path))
+    end
+    if attributes["run_list"]
+      set :run_list, attributes["run_list"]
+    end
+  end
 
   namespace :roundsman do
 
@@ -167,7 +179,9 @@ require 'tempfile'
     namespace :chef do
 
       set_default :chef_version, "~> 10.18.2"
+      set_default :chef_attributes, Hash.new
       set_default :cookbooks_directory, ["config/cookbooks"]
+      set_default :roles_directory, "config/roles"
       set_default :databags_directory, "config/data_bags"
       set_default :copyfile_disable, false
       set_default :verbose_logging, true
@@ -246,7 +260,11 @@ require 'tempfile'
       end
 
       def generate_attributes
-        attrs = remove_procs_from_hash variables.dup
+        if fetch(:chef_attributes)
+          attrs = fetch(:chef_attributes)
+        else
+          attrs = remove_procs_from_hash variables.dup
+        end
         put attrs.to_json, roundsman_working_dir("solo.json"), :via => :scp
       end
 
