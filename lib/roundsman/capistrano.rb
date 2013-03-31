@@ -172,9 +172,11 @@ require 'tempfile'
       set_default :databags_directory, "config/data_bags"
       set_default :copyfile_disable, false
       set_default :verbose_logging, true
+      set_default :chef_roles_auto_discovery, false
       set_default :filter_sensitive_settings, [ /password/, /filter_sensitive_settings/ ]
 
       task :default, :except => { :no_release => true } do
+        discover_roles_for_servers
         ensure_cookbooks_exists
         prepare_chef
         chef_solo
@@ -204,18 +206,55 @@ require 'tempfile'
 
       desc "Runs the existing chef configuration"
       task :chef_solo, :except => { :no_release => true } do
-        logger.info "Now running #{fetch(:run_list).join(', ')}"
+        if fetch(:chef_roles_auto_discovery)
+          run_list = discovered_run_lists.flatten.uniq
+        else
+          run_list = fetch(:run_list)
+        end
+
+        logger.info "Now running #{fetch(:run_list, []).join(', ')}"
         old_sudo = self[:sudo]
         if self[:rvm_type] == :user
           self[:sudo] = "rvmsudo_secure_path=1 #{File.join(rvm_bin_path, "rvmsudo")}"
         end
 
-        sudo "chef-solo -c #{roundsman_working_dir("solo.rb")} -j #{roundsman_working_dir("solo.json")}#{' -l debug' if fetch(:debug_chef)}"
+        command = "chef-solo -c #{roundsman_working_dir("solo.rb")} -j #{roundsman_working_dir("solo.json")}#{' -l debug' if fetch(:debug_chef)}"
+        if fetch(:chef_roles_auto_discovery)
+          parallel do |session|
+            session.when "options[:run_list].size > 0",
+              "#{top.sudo} #{command}"
+          end
+        else
+          sudo command
+        end
         self[:sudo] = old_sudo
       end
 
+      def discover_roles_for_servers
+        if fetch(:chef_roles_auto_discovery)
+          find_servers_for_task(current_task).each do |server|
+            server.options[:run_list] = fetch(:run_list, [])
+
+            role_names_for_host(server).each do |role|
+              server.options[:run_list] << "role[#{role}]"  if role_exists?(role)
+            end
+          end
+        end
+      end
+
+      def discovered_run_lists
+        find_servers_for_task(current_task).collect{|server| server.options[:run_list]}.compact
+      end
+
       def ensure_cookbooks_exists
-        abort "You must specify at least one recipe when running roundsman.chef" if fetch(:run_list, []).empty?
+        if fetch(:chef_roles_auto_discovery)
+          if discovered_run_lists.all?{|run_list| run_list.empty?}
+            abort "You must specify at least one recipe when running roundsman.chef"
+          end
+        else
+          abort "You must specify at least one recipe when running roundsman.chef" if fetch(:run_list, []).empty?
+        end
+
         abort "No cookbooks found in #{fetch(:cookbooks_directory).inspect}" if cookbooks_paths.empty?
       end
 
@@ -239,6 +278,11 @@ require 'tempfile'
         output == "false"
       end
 
+      def role_exists?(name)
+         File.exist?(File.join(fetch(:roles_directory), name.to_s + ".json")) ||
+         File.exist?(File.join(fetch(:roles_directory), name.to_s + ".rb"))
+      end
+
       def generate_config
         cookbook_string = cookbooks_paths.map { |c| "File.join(root, #{c.to_s.inspect})" }.join(', ')
         solo_rb = <<-RUBY
@@ -253,8 +297,16 @@ require 'tempfile'
       end
 
       def generate_attributes
-        attrs = remove_procs_from_hash variables.dup
-        put attrs.to_json, roundsman_working_dir("solo.json"), :via => :scp
+        if fetch(:chef_roles_auto_discovery)
+          find_servers_for_task(current_task).each do |server|
+            attrs = remove_procs_from_hash variables.dup
+            attrs[:run_list] = server.options[:run_list]
+            put attrs.to_json, roundsman_working_dir("solo.json"), :hosts => server.host, :via => :scp
+          end
+        else
+            attrs = remove_procs_from_hash variables.dup
+            put attrs.to_json, roundsman_working_dir("solo.json"), :via => :scp
+        end
       end
 
       # Recursively removes procs from hashes. Procs can exist because you specified them like this:
