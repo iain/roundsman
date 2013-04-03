@@ -284,6 +284,7 @@ require 'tempfile'
           tar_file.close
           env_vars = fetch(:copyfile_disable) && RUBY_PLATFORM.downcase.include?('darwin') ? "COPYFILE_DISABLE=true" : ""
           system "#{env_vars} tar -cjf #{tar_file.path} #{cookbooks_paths.join(' ')} #{databags_path.to_s}"
+          run "rm -rf #{roundsman_working_dir}"
           upload tar_file.path, roundsman_working_dir("cookbooks.tar"), :via => :scp
           run "cd #{roundsman_working_dir} && tar -xjf cookbooks.tar"
         ensure
