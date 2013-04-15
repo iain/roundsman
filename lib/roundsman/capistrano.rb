@@ -248,7 +248,14 @@ require 'tempfile'
         remove_attrs = fetch(:roundsman_skip_attrs)
         attrs.delete(*remove_attrs) if remove_attrs
 
-        put attrs.to_json, roundsman_working_dir("solo.json"), :via => :scp
+        if variables.has_key?(:per_server_conf)
+          per_server_conf.each do |servers, conf|
+            server_conf = attrs.merge(conf)
+            put server_conf.to_json, roundsman_working_dir("solo.json"), :via => :scp, :hosts => servers
+          end
+        else
+          put attrs.to_json, roundsman_working_dir("solo.json"), :via => :scp
+        end
       end
 
       # Recursively removes procs from hashes. Procs can exist because you specified them like this:
