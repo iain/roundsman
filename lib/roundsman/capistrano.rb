@@ -264,7 +264,7 @@ require 'tempfile'
       def remove_procs_from_hash(hash)
         new_hash = {}
         hash.each do |key, value|
-          next if fetch(:filter_sensitive_settings).find { |regex| regex.match(key) }
+          next if fetch(:filter_sensitive_settings).find { |regex| regex === key }
           real_value = if value.respond_to?(:call)
             begin
               value.call
