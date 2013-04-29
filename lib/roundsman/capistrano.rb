@@ -245,7 +245,7 @@ require 'tempfile'
       def generate_attributes
         attrs = remove_procs_from_hash variables.dup
 
-        remove_attrs = fetch(:roundsman_skip_attrs)
+        remove_attrs = fetch(:roundsman_skip_attrs) if variables.has_key?(:roundsman_skip_attrs)
 
         find_servers_for_task(current_task).each do |current_server|
           server_conf = attrs.merge(current_server.options)
