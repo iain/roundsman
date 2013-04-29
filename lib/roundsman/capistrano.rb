@@ -244,14 +244,9 @@ require 'tempfile'
       end
 
       def generate_attributes
-        attrs = remove_procs_from_hash variables.dup
-
-        remove_attrs = fetch(:roundsman_skip_attrs) if variables.has_key?(:roundsman_skip_attrs)
-
         find_servers_for_task(current_task).each do |current_server|
-          server_conf = attrs.merge(current_server.options)
-
-          server_conf.delete(*remove_attrs) if remove_attrs
+          merged_options  = variables.merge(current_server.options)
+          server_conf     = remove_procs_from_hash(merged_options)
 
           put server_conf.to_json, roundsman_working_dir("solo.json"), :via => :scp, :hosts => current_server.host
         end
