@@ -246,16 +246,23 @@ require 'tempfile'
         attrs = remove_procs_from_hash variables.dup
 
         remove_attrs = fetch(:roundsman_skip_attrs)
-        attrs.delete(*remove_attrs) if remove_attrs
 
-        if variables.has_key?(:per_server_conf)
-          per_server_conf.each do |servers, conf|
-            server_conf = attrs.merge(conf)
-            put server_conf.to_json, roundsman_working_dir("solo.json"), :via => :scp, :hosts => servers
-          end
-        else
-          put attrs.to_json, roundsman_working_dir("solo.json"), :via => :scp
+        find_servers_for_task(current_task).each do |current_server|
+          server_conf = attrs.merge(current_server.options)
+
+          server_conf.delete(*remove_attrs) if remove_attrs
+
+          put server_conf.to_json, roundsman_working_dir("solo.json"), :via => :scp, :hosts => current_server.host
         end
+
+        # if variables.has_key?(:per_server_conf)
+        #   per_server_conf.each do |servers, conf|
+        #     server_conf = attrs.merge(conf)
+        #     put server_conf.to_json, roundsman_working_dir("solo.json"), :via => :scp, :hosts => servers
+        #   end
+        # else
+        #   put attrs.to_json, roundsman_working_dir("solo.json"), :via => :scp
+        # end
       end
 
       # Recursively removes procs from hashes. Procs can exist because you specified them like this:
