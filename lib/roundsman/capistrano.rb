@@ -174,6 +174,7 @@ require 'tempfile'
       set_default :cookbooks_directory, ["config/cookbooks"]
       set_default :copyfile_disable, false
       set_default :filter_sensitive_settings, [ /password/, /filter_sensitive_settings/ ]
+      set_default :remove_settings_from_chef, [ ]
 
       task :default, :except => { :no_release => true } do
         ensure_cookbooks_exists
@@ -260,9 +261,11 @@ require 'tempfile'
       #
       #     set(:root_password) { Capistrano::CLI.password_prompt("Root password: ") }
       def remove_procs_from_hash(hash)
+        filter_fields = Array(fetch(:filter_sensitive_settings)) + Array(fetch(:remove_settings_from_chef))
+
         new_hash = {}
         hash.each do |key, value|
-          next if fetch(:filter_sensitive_settings).find { |regex| regex === key }
+          next if filter_fields.find { |matcher| matcher === key }
           real_value = if value.respond_to?(:call)
             begin
               value.call
